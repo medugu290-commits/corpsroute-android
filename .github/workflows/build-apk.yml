@@ -20,14 +20,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Decode signing key
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: |
-          echo "$SIGNING_KEY" | base64 --decode > "$GITHUB_WORKSPACE/release-key.jks"
+          echo "$SIGNING_KEY" | base64 --decode > release-key.jks
 
       - name: Build release APK
         env:
@@ -35,7 +35,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          ./gradlew assembleRelease \
+          gradle assembleRelease \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/release-key.jks" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
