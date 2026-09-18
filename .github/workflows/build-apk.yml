@@ -20,11 +20,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Decode signing key
-        run: |
-          echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > release-key.jks
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
 
-      - name: Build signed release APK
+      - name: Decode signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          echo "$SIGNING_KEY" | base64 --decode > "$GITHUB_WORKSPACE/release-key.jks"
+
+      - name: Build release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -41,3 +46,4 @@ jobs:
         with:
           name: CorpsRoute-Nigeria-APK
           path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
