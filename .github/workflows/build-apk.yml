@@ -23,6 +23,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Extract Android project
+        run: |
+          mkdir -p project
+          unzip -q "CorpsRoute-Nigeria-Android-Project-FIXED.zip" -d project
+
+      - name: Find Gradle project
+        run: |
+          PROJECT_DIR=$(dirname "$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project at: $PROJECT_DIR"
+
       - name: Decode signing key
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
@@ -35,7 +46,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          gradle assembleRelease \
+          gradle -p "$PROJECT_DIR" assembleRelease \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/release-key.jks" \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
@@ -45,5 +56,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CorpsRoute-Nigeria-APK
-          path: app/build/outputs/apk/release/*.apk
+          path: |
+            project/**/build/outputs/apk/release/*.apk
           if-no-files-found: error
