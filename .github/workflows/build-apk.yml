@@ -1,4 +1,5 @@
-name: Build CorpsRoute APK
+
+name: Build CorpsRoute Release APK
 
 on:
   workflow_dispatch:
@@ -6,12 +7,15 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java
@@ -20,42 +24,85 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          echo "/tmp/gradle-8.7/bin" >> "$GITHUB_PATH"
 
-      - name: Extract Android project
+      - name: Extract CorpsRoute project
         run: |
           mkdir -p project
-          unzip -q "CorpsRoute-Nigeria-Android-Project-FIXED.zip" -d project
+          unzip -q "CorpsRoute-Nigeria-Update-1.2.zip" -d project
 
-      - name: Find Gradle project
+      - name: Find Android project
+        shell: bash
         run: |
-          PROJECT_DIR=$(dirname "$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Found project at: $PROJECT_DIR"
+          SETTINGS_FILE=$(find project -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
 
-      - name: Decode signing key
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: No settings.gradle or settings.gradle.kts found in the ZIP."
+            echo "The ZIP must contain a complete Android Gradle project."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Android project found at: $PROJECT_DIR"
+
+      - name: Prepare signing key
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: |
-          echo "$SIGNING_KEY" | base64 --decode > release-key.jks
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "ERROR: SIGNING_KEY secret is missing."
+            exit 1
+          fi
 
-      - name: Build release APK
+          echo "$SIGNING_KEY" | base64 --decode > "$GITHUB_WORKSPACE/release-key.jks"
+          test -s "$GITHUB_WORKSPACE/release-key.jks"
+
+      - name: Build signed release APK
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          if [ -z "$KEY_STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: One or more signing secrets are missing."
+            exit 1
+          fi
+
           gradle -p "$PROJECT_DIR" assembleRelease \
             -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/release-key.jks" \
-            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.store.password="$KEY_STORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Verify APK signature
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -path '*/build/outputs/apk/release/*.apk' -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: Release APK was not found."
+            exit 1
+          fi
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print -quit)
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: Android apksigner was not found."
+            exit 1
+          fi
+
+          "$APKSIGNER" verify --verbose "$APK"
+          echo "APK signature verification passed."
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: CorpsRoute-Nigeria-APK
-          path: |
-            project/**/build/outputs/apk/release/*.apk
+          name: CorpsRoute-Nigeria-release
+          path: project/**/build/outputs/apk/release/*.apk
           if-no-files-found: error
+          retention-days: 14
+          
